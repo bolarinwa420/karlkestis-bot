@@ -1,0 +1,5 @@
+node_modules/
+.env
+alerted.json
+social_baseline.json
+scored-tokens.json

@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Token Launch Scorer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #08080f;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --border: #2a2a3a;
+      --text: #e2e2f0;
+      --muted: #6b6b8a;
+      --accent: #7c3aed;
+      --accent2: #a855f7;
+      --grade-s: #00e676;
+      --grade-a: #40c4ff;
+      --grade-b: #ffee58;
+      --grade-c: #ffa726;
+      --grade-d: #ef5350;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.3px; }
+    header span { color: var(--muted); font-size: 0.85rem; }
+    .badge { background: var(--accent); color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+
+    .layout { display: grid; grid-template-columns: 1fr 420px; gap: 0; min-height: calc(100vh - 61px); }
+
+    /* ── Form panel ── */
+    .form-panel { padding: 28px 32px; overflow-y: auto; border-right: 1px solid var(--border); }
+
+    .section { margin-bottom: 28px; }
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--accent2);
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .field-row.trio { grid-template-columns: 1fr 1fr 1fr; }
+    .field-row.single { grid-template-columns: 1fr; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+
+    input, select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    select option { background: var(--surface2); }
+
+    .radio-group { display: flex; gap: 10px; }
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      color: var(--text);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 6px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .radio-group input[type="radio"] { display: none; }
+    .radio-group input[type="radio"]:checked + span { color: var(--accent2); font-weight: 600; }
+    .radio-group label:has(input:checked) { border-color: var(--accent); background: #1e1030; }
+
+    .ba-extra { display: none; margin-top: 8px; }
+    .ba-extra.visible { display: block; }
+
+    .submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: background 0.15s, transform 0.1s;
+      margin-top: 8px;
+    }
+    .submit-btn:hover { background: var(--accent2); }
+    .submit-btn:active { transform: scale(0.99); }
+    .submit-btn:disabled { background: var(--muted); cursor: not-allowed; }
+
+    /* ── Results panel ── */
+    .results-panel {
+      padding: 28px 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 10px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty-state .icon { font-size: 2.5rem; }
+    .empty-state p { font-size: 0.88rem; line-height: 1.5; max-width: 220px; }
+
+    .result-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .grade-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 900;
+      border: 3px solid;
+      flex-shrink: 0;
+    }
+
+    .result-meta { flex: 1; }
+    .result-meta .token-name { font-size: 1.1rem; font-weight: 700; }
+    .result-meta .grade-label { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
+
+    .score-bar-wrap { margin-top: 10px; }
+    .score-bar-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; }
+    .score-bar-bg { background: var(--border); border-radius: 99px; height: 6px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 99px; transition: width 0.6s ease; }
+
+    .predictions { display: flex; flex-direction: column; gap: 10px; }
+    .pred-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .pred-label { font-size: 0.72rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+    .pred-outcome { font-size: 0.92rem; font-weight: 600; }
+    .pred-range { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+    .signals { display: flex; flex-direction: column; gap: 8px; }
+    .signal-group-title { font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+    .signal-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .signal-item.positive { border-left: 3px solid #00e676; }
+    .signal-item.negative { border-left: 3px solid #ef5350; }
+    .signal-icon { flex-shrink: 0; }
+
+    /* History */
+    .history-section { margin-top: 4px; }
+    .history-title { font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .history-item:hover { border-color: var(--accent); }
+    .hist-grade { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.9rem; border: 2px solid; flex-shrink: 0; }
+    .hist-info { flex: 1; }
+    .hist-name { font-size: 0.88rem; font-weight: 600; }
+    .hist-date { font-size: 0.72rem; color: var(--muted); }
+    .hist-score { font-size: 0.82rem; color: var(--muted); }
+    .hist-delete { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; font-size: 1rem; opacity: 0.5; }
+    .hist-delete:hover { opacity: 1; color: #ef5350; }
+
+    .loading { display: none; text-align: center; color: var(--muted); font-size: 0.88rem; padding: 20px; }
+    .loading.visible { display: block; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .form-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Token Launch Scorer</h1>
+  <span class="badge">Phase 3</span>
+  <span>Input parameters → S/A/B/C/D grade + TGE / 30d / 90d predictions</span>
+</header>
+
+<div class="layout">
+
+  <!-- ─── FORM ─── -->
+  <div class="form-panel">
+    <form id="scoreForm">
+
+      <div class="section">
+        <div class="section-title">Token Basics</div>
+        <div class="field-row trio">
+          <div class="field"><label>Token Name</label><input type="text" name="token_name" placeholder="e.g. Hyperliquid" required /></div>
+          <div class="field"><label>Symbol</label><input type="text" name="token_symbol" placeholder="e.g. HYPE" required /></div>
+          <div class="field"><label>TGE Date (optional)</label><input type="date" name="tge_date" /></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Tokenomics</div>
+        <div class="field-row trio">
+          <div class="field">
+            <label>Circulating Supply at TGE (%)</label>
+            <input type="number" name="circ_supply_pct" placeholder="e.g. 15" min="0" max="100" required />
+          </div>
+          <div class="field">
+            <label>Launch DEX Liquidity ($M)</label>
+            <input type="number" name="launch_liquidity_m" placeholder="e.g. 5" min="0" step="0.1" />
+          </div>
+          <div class="field">
+            <label>Unlock Schedule</label>
+            <select name="unlock_type" required>
+              <option value="">Select...</option>
+              <option value="100pct">100% at TGE</option>
+              <option value="linear">Linear vesting</option>
+              <option value="cliff_linear">Cliff + linear vesting</option>
+              <option value="vested">Vested (other)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Backing</div>
+        <div class="field-row">
+          <div class="field">
+            <label>VC Tier</label>
+            <select name="vc_tier" required>
+              <option value="">Select...</option>
+              <option value="tier1">Tier 1 — a16z / Paradigm / Sequoia</option>
+              <option value="binance_labs">Binance Labs</option>
+              <option value="mid">Mid-tier VCs</option>
+              <option value="dwf">DWF Labs</option>
+              <option value="unknown">Unknown / Anon VCs</option>
+              <option value="none">No VC backing</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Total Raise ($M)</label>
+            <input type="number" name="raise_amount_m" placeholder="e.g. 30" min="0" step="0.5" />
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Distribution</div>
+        <div class="field-row">
+          <div class="field">
+            <label>CEX Listing Tier</label>
+            <select name="cex_tier" required>
+              <option value="">Select...</option>
+              <option value="binance_day1">Binance — Day 1</option>
+              <option value="bybit">Bybit</option>
+              <option value="gate_kucoin">Gate / KuCoin / Other</option>
+              <option value="dex_only">DEX only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Airdrop Type</label>
+            <select name="airdrop_type">
+              <option value="none">No airdrop</option>
+              <option value="qualified">Qualified users only</option>
+              <option value="points_farm">Points farming campaign</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row single">
+          <div class="field">
+            <label>Binance Alpha involved?</label>
+            <div class="radio-group">
+              <label><input type="radio" name="binance_alpha" value="yes" /><span>Yes</span></label>
+              <label><input type="radio" name="binance_alpha" value="no" checked /><span>No</span></label>
+            </div>
+            <div class="ba-extra" id="baExtra">
+              <input type="number" name="ba_allocation_pct" placeholder="BA allocation %" min="0" max="20" step="0.1" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Market Context</div>
+        <div class="field-row trio">
+          <div class="field">
+            <label>Macro at TGE</label>
+            <select name="macro" required>
+              <option value="">Select...</option>
+              <option value="bull">Bull market</option>
+              <option value="neutral">Neutral / sideways</option>
+              <option value="bear">Bear market</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Narrative / Sector</label>
+            <select name="narrative" required>
+              <option value="">Select...</option>
+              <option value="ai">AI</option>
+              <option value="depin">DePIN</option>
+              <option value="rwa">RWA</option>
+              <option value="btc_fi">BTCFi</option>
+              <option value="defi">DeFi</option>
+              <option value="gaming">Gaming</option>
+              <option value="infra">Infrastructure / L1 / L2</option>
+              <option value="meme">Meme</option>
+              <option value="nft">NFT</option>
+              <option value="metaverse">Metaverse</option>
+              <option value="play2earn">Play-to-Earn</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>InfoFi / Mindshare</label>
+            <select name="infofi">
+              <option value="none">None / minimal</option>
+              <option value="moderate">Moderate (Kaito tracked)</option>
+              <option value="strong">Strong (trending on Kaito / Wallchain)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row single">
+          <div class="field">
+            <label>FUD Level at TGE</label>
+            <select name="fud_level">
+              <option value="none">No major FUD</option>
+              <option value="minor">Minor FUD</option>
+              <option value="major">Major FUD</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Risk Checks</div>
+        <div class="field-row">
+          <div class="field">
+            <label>Team</label>
+            <select name="team">
+              <option value="doxxed_track_record">Doxxed + track record</option>
+              <option value="doxxed">Doxxed, no track record</option>
+              <option value="anon">Anonymous</option>
+            </select>
+          </div>
+          <div class="field" style="justify-content:flex-end;gap:16px;">
+            <div>
+              <label style="display:block;margin-bottom:6px;">Smart Contract Audited?</label>
+              <div class="radio-group">
+                <label><input type="radio" name="audited" value="yes" checked /><span>Yes</span></label>
+                <label><input type="radio" name="audited" value="no" /><span>No</span></label>
+              </div>
+            </div>
+            <div>
+              <label style="display:block;margin-bottom:6px;">LP Locked?</label>
+              <div class="radio-group">
+                <label><input type="radio" name="lp_locked" value="yes" checked /><span>Yes</span></label>
+                <label><input type="radio" name="lp_locked" value="no" /><span>No</span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submitBtn">Score This Token →</button>
+    </form>
+  </div>
+
+  <!-- ─── RESULTS ─── -->
+  <div class="results-panel" id="resultsPanel">
+
+    <div class="empty-state" id="emptyState">
+      <div class="icon">🎯</div>
+      <p>Fill in the parameters and hit Score. Your grade + predictions appear here.</p>
+    </div>
+
+    <div class="loading" id="loadingState">Scoring...</div>
+
+    <div id="resultContent" style="display:none; display:flex; flex-direction:column; gap:18px;"></div>
+
+    <div class="history-section" id="historySection" style="display:none;">
+      <div class="history-title">Previous Scores</div>
+      <div id="historyList"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Toggle BA allocation field ──
+  document.querySelectorAll('input[name="binance_alpha"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.getElementById('baExtra').classList.toggle('visible', r.value === 'yes' && r.checked);
+    });
+  });
+
+  // ── Grade color helper ──
+  function gradeColor(letter) {
+    return { S: '#00e676', A: '#40c4ff', B: '#ffee58', C: '#ffa726', D: '#ef5350' }[letter] || '#aaa';
+  }
+
+  // ── Render result ──
+  function renderResult(token, result) {
+    const c = gradeColor(result.grade.letter);
+    const pct = result.score;
+
+    return `
+      <div class="result-header">
+        <div class="grade-circle" style="color:${c};border-color:${c};">${result.grade.letter}</div>
+        <div class="result-meta">
+          <div class="token-name">$${token.symbol} — ${token.name}</div>
+          <div class="grade-label">${result.grade.label} · Score: ${pct}/100</div>
+          <div class="score-bar-wrap">
+            <div class="score-bar-bg">
+              <div class="score-bar-fill" style="width:${pct}%;background:${c};"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="predictions">
+        <div class="signal-group-title">Predictions</div>
+        ${['tge','tge30','tge90'].map((k,i) => {
+          const labels = ['TGE Day (0-24h)', '30 Days Post-TGE', '90 Days Post-TGE'];
+          const p = result.predictions[k];
+          return `<div class="pred-card">
+            <div>
+              <div class="pred-label">${labels[i]}</div>
+              <div class="pred-outcome">${p.label}</div>
+              <div class="pred-range">${p.range}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="signals">
+        ${result.positives.length ? `
+          <div class="signal-group-title">Positive Signals</div>
+          ${result.positives.map(f => `<div class="signal-item positive"><span class="signal-icon">✅</span>${f}</div>`).join('')}
+        ` : ''}
+        ${result.flags.length ? `
+          <div class="signal-group-title" style="margin-top:8px;">Risk Flags</div>
+          ${result.flags.map(f => `<div class="signal-item negative"><span class="signal-icon">⚠️</span>${f}</div>`).join('')}
+        ` : '<div class="signal-item positive"><span class="signal-icon">✅</span>No major risk flags detected</div>'}
+      </div>
+    `;
+  }
+
+  // ── Load history ──
+  async function loadHistory() {
+    const res = await fetch('/api/history');
+    const history = await res.json();
+    if (!history.length) return;
+
+    const section = document.getElementById('historySection');
+    const list = document.getElementById('historyList');
+    section.style.display = 'block';
+
+    list.innerHTML = history.map(h => {
+      const c = gradeColor(h.grade);
+      const date = new Date(h.timestamp).toLocaleDateString();
+      return `<div class="history-item" data-id="${h.id}" onclick="loadHistoryItem(${h.id})">
+        <div class="hist-grade" style="color:${c};border-color:${c};">${h.grade}</div>
+        <div class="hist-info">
+          <div class="hist-name">$${h.symbol} — ${h.name}</div>
+          <div class="hist-date">${date}${h.tge_date ? ' · TGE: ' + h.tge_date : ''}</div>
+        </div>
+        <div class="hist-score">${h.score}/100</div>
+        <button class="hist-delete" onclick="deleteHistory(event, ${h.id})">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  let historyCache = [];
+
+  async function loadHistoryItem(id) {
+    if (!historyCache.length) {
+      const res = await fetch('/api/history');
+      historyCache = await res.json();
+    }
+    const item = historyCache.find(h => h.id === id);
+    if (!item) return;
+    showResult({ name: item.name, symbol: item.symbol }, item.result);
+  }
+
+  async function deleteHistory(e, id) {
+    e.stopPropagation();
+    await fetch(`/api/history/${id}`, { method: 'DELETE' });
+    historyCache = [];
+    loadHistory();
+  }
+
+  function showResult(token, result) {
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('loadingState').classList.remove('visible');
+    const content = document.getElementById('resultContent');
+    content.style.display = 'flex';
+    content.innerHTML = renderResult(token, result);
+    content.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Form submit ──
+  document.getElementById('scoreForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Scoring...';
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('loadingState').classList.add('visible');
+    document.getElementById('resultContent').style.display = 'none';
+
+    const data = Object.fromEntries(new FormData(e.target));
+
+    try {
+      const res = await fetch('/api/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+
+      showResult({ name: data.token_name, symbol: data.token_symbol.toUpperCase() }, json.result);
+      historyCache = [];
+      loadHistory();
+    } catch (err) {
+      alert('Error: ' + err.message);
+      document.getElementById('loadingState').classList.remove('visible');
+      document.getElementById('emptyState').style.display = 'flex';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Score This Token →';
+    }
+  });
+
+  // ── Init ──
+  loadHistory();
+</script>
+</body>
+</html>
