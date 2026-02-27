@@ -11,23 +11,40 @@ const bot = new Bot(process.env.BOT_TOKEN);
 // Tokens that are almost certainly EVM-native — warn if found on Solana
 const EVM_NATIVE = new Set(['BTC', 'WBTC', 'ETH', 'WETH', 'BNB', 'MATIC', 'AVAX', 'LINK', 'UNI', 'AAVE', 'CRV', 'MKR', 'SNX', 'ARB', 'OP']);
 
+// --- Register command menu with Telegram (shows in the "/" menu bar) ---
+bot.api.setMyCommands([
+  { command: 'a',         description: 'Analyze any token — /a PEPE' },
+  { command: 'analyze',   description: 'Full token analysis — /analyze BTC' },
+  { command: 'alert',     description: 'Price alert — /alert BTC 90000' },
+  { command: 'alerts',    description: 'List or clear your active alerts' },
+  { command: 'watch',     description: 'Add to watchlist — /watch SOL' },
+  { command: 'unwatch',   description: 'Remove from watchlist — /unwatch SOL' },
+  { command: 'watchlist', description: 'Show your watchlist' },
+  { command: 'help',      description: 'How to use the bot' },
+  { command: 'start',     description: 'Welcome & command overview' },
+]).catch((err) => console.error('Failed to set commands:', err.message));
+
 // --- /start ---
 bot.command('start', (ctx) =>
   ctx.reply(
-    '*Karlkestis Analysis Bot*\n\n' +
-    'Commands:\n' +
-    '`/analyze <token>` — full trading analysis\n' +
-    '`/a <token>` — shorthand for above\n' +
-    '`/alert <token> <price>` — price alert\n' +
-    '`/alerts` — list your active alerts\n' +
-    '`/watch <token>` — add to watchlist\n' +
-    '`/unwatch <token>` — remove from watchlist\n' +
-    '`/watchlist` — show watchlist\n' +
-    '`/help` — how to use\n\n' +
-    'Examples:\n' +
-    '`/a PEPE`\n' +
-    '`/alert BTC 90000`\n' +
-    '`/watch SOL`',
+    '👁 *Karlkestis — Token Analysis Bot*\n' +
+    '─────────────────────────\n\n' +
+    '*🔍 Analyze*\n' +
+    '`/a <token>` — quick analysis\n' +
+    '`/analyze <token>` — same thing\n' +
+    '_Use name, symbol, or contract address_\n\n' +
+    '*🔔 Price Alerts*\n' +
+    '`/alert BTC 90000` — fires when price hits target\n' +
+    '`/alerts` — see active alerts\n' +
+    '`/alerts clear` — cancel all\n\n' +
+    '*👁 Watchlist*\n' +
+    '`/watch SOL` — alerts on big moves (≥5% 1h or ≥10% 24h)\n' +
+    '`/unwatch SOL` — stop watching\n' +
+    '`/watchlist` — see what you\'re tracking\n\n' +
+    '*❓ Help*\n' +
+    '`/help` — full usage guide\n\n' +
+    '─────────────────────────\n' +
+    '_Tap the `/` button below to see all commands._',
     { parse_mode: 'Markdown' }
   )
 );
