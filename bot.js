@@ -5,6 +5,7 @@ const {
   addAlert, getAlerts, removeAlertsAt, clearAllAlerts, allAlertEntries,
   addWatch, removeWatch, getWatchlist, allWatchEntries, canAlertWatch,
 } = require('./alerts');
+const { getFearGreed, getTrendingCoins, getTopGainers } = require('./market');
 
 const bot = new Bot(process.env.BOT_TOKEN);
 
@@ -15,6 +16,7 @@ const EVM_NATIVE = new Set(['BTC', 'WBTC', 'ETH', 'WETH', 'BNB', 'MATIC', 'AVAX'
 bot.api.setMyCommands([
   { command: 'a',         description: 'Analyze any token — /a PEPE' },
   { command: 'analyze',   description: 'Full token analysis — /analyze BTC' },
+  { command: 'trending',  description: 'Market pulse — top trending & gainers' },
   { command: 'alert',     description: 'Price alert — /alert BTC 90000' },
   { command: 'alerts',    description: 'List or clear your active alerts' },
   { command: 'watch',     description: 'Add to watchlist — /watch SOL' },
@@ -33,6 +35,8 @@ bot.command('start', (ctx) =>
     '`/a <token>` — quick analysis\n' +
     '`/analyze <token>` — same thing\n' +
     '_Use name, symbol, or contract address_\n\n' +
+    '*🔥 Market Pulse*\n' +
+    '`/trending` — top trending coins + gainers + fear & greed\n\n' +
     '*🔔 Price Alerts*\n' +
     '`/alert BTC 90000` — fires when price hits target\n' +
     '`/alerts` — see active alerts\n' +
@@ -54,8 +58,10 @@ bot.command('help', (ctx) =>
   ctx.reply(
     '*How to use:*\n\n' +
     '*Analyze a token:*\n' +
-    '`/analyze <name, symbol, or contract>` (or `/a`)\n' +
+    '`/a <name, symbol, or contract>` (or `/analyze`)\n' +
     '_Tip: contract address = most accurate result_\n\n' +
+    '*Market Pulse:*\n' +
+    '`/trending` — trending coins, top gainers, fear & greed index\n\n' +
     '*Price alerts:*\n' +
     '`/alert BTC 90000` — fires when BTC hits $90K\n' +
     '`/alerts` — list your active alerts\n' +
@@ -65,6 +71,7 @@ bot.command('help', (ctx) =>
     '`/unwatch SOL` — stop watching\n' +
     '`/watchlist` — see what you\'re watching\n\n' +
     '*What analyze gives you:*\n' +
+    '• Market sentiment (Fear & Greed)\n' +
     '• Live price, volume, liquidity\n' +
     '• Price action (5m / 1h / 6h / 24h)\n' +
     '• RSI(14) from 30-day history\n' +
@@ -75,6 +82,61 @@ bot.command('help', (ctx) =>
     { parse_mode: 'Markdown' }
   )
 );
+
+// --- /trending ---
+bot.command('trending', async (ctx) => {
+  await ctx.reply('🔍 Fetching market pulse...', { parse_mode: 'Markdown' });
+
+  try {
+    const [fg, trending, gainers] = await Promise.all([
+      getFearGreed(),
+      getTrendingCoins(),
+      getTopGainers(),
+    ]);
+
+    const lines = ['🔥 *Market Pulse*\n'];
+
+    // Fear & Greed
+    if (fg) {
+      lines.push(`${fg.emoji} *Fear & Greed: ${fg.value} — ${fg.label}*\n`);
+    }
+
+    // Trending coins
+    if (trending.length > 0) {
+      lines.push('🔍 *Trending Now (most searched 24h)*');
+      trending.forEach((c, i) => {
+        const rank = c.rank ? ` #${c.rank}` : '';
+        const change = c.change24h !== null
+          ? `  ${c.change24h >= 0 ? '+' : ''}${c.change24h.toFixed(1)}%`
+          : '';
+        lines.push(`${i + 1}. *${c.symbol}*${rank}${change}`);
+      });
+      lines.push('');
+    }
+
+    // Top gainers
+    if (gainers.length > 0) {
+      lines.push('📈 *Top Gainers (24h)*');
+      gainers.forEach((c, i) => {
+        const change = c.change24h !== null
+          ? `+${c.change24h.toFixed(1)}%`
+          : 'N/A';
+        lines.push(`${i + 1}. *${c.symbol}*  ${change}  — $${formatPrice(c.price)}`);
+      });
+      lines.push('');
+    }
+
+    lines.push('_Use `/a <symbol>` to analyze any of these._');
+
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true,
+    });
+  } catch (err) {
+    console.error('Trending error:', err.message);
+    await ctx.reply('❌ Failed to fetch trending data. Try again in a moment.');
+  }
+});
 
 // --- Shared analyze handler ---
 async function handleAnalyze(ctx, query) {
@@ -88,9 +150,13 @@ async function handleAnalyze(ctx, query) {
   await ctx.reply(`🔍 Analyzing *${query}*...\n_Takes ~10s_`, { parse_mode: 'Markdown' });
 
   try {
-    const data = await analyzeToken(query);
+    // Fetch token data + Fear & Greed in parallel
+    const [data, fg] = await Promise.all([
+      analyzeToken(query),
+      getFearGreed(),
+    ]);
     if (data.error) return ctx.reply(`❌ ${data.error}`);
-    await ctx.reply(buildReport(data), {
+    await ctx.reply(buildReport(data, fg), {
       parse_mode: 'Markdown',
       disable_web_page_preview: true,
     });
@@ -317,7 +383,7 @@ setInterval(checkPriceAlerts, 5 * 60 * 1000);   // every 5 minutes
 setInterval(checkWatchlist, 60 * 60 * 1000);     // every 60 minutes
 
 // --- Format the full report ---
-function buildReport(d) {
+function buildReport(d, fg = null) {
   const lines = [];
   const p = d.priceUsd;
 
@@ -329,6 +395,11 @@ function buildReport(d) {
   // Solana chain warning for EVM-native tokens
   if (d.chainId === 'solana' && EVM_NATIVE.has(d.symbol?.toUpperCase())) {
     lines.push(`⚠️ _Warning: This appears to be a wrapped/bridged version on Solana. Verify the contract address._`);
+  }
+
+  // Fear & Greed
+  if (fg) {
+    lines.push(`${fg.emoji} Market Sentiment: *${fg.value} — ${fg.label}*`);
   }
   lines.push('');
 
