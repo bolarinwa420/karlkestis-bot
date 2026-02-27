@@ -33,7 +33,8 @@ function pctStr(n) {
 }
 
 // --- DexScreener ---
-async function getDexData(query) {
+// cgPrice: if provided, filters pairs to those within 20% of that price
+async function getDexData(query, cgPrice = null) {
   const isEVMAddress = /^0x[0-9a-fA-F]{40}$/.test(query);
   const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query);
 
@@ -49,8 +50,18 @@ async function getDexData(query) {
   if (!pairs || pairs.length === 0) return null;
 
   // Filter: must have price and some liquidity
-  const valid = pairs.filter((p) => p.priceUsd && (p.liquidity?.usd || 0) > 0);
+  let valid = pairs.filter((p) => p.priceUsd && (p.liquidity?.usd || 0) > 0);
   if (valid.length === 0) return null;
+
+  // If we have a CoinGecko price, filter to pairs within 20% of it
+  // This prevents picking wrong chains (e.g. wrapped BTC on Solana instead of real BTC)
+  if (cgPrice) {
+    const matched = valid.filter((p) => {
+      const ratio = parseFloat(p.priceUsd) / cgPrice;
+      return ratio >= 0.8 && ratio <= 1.2;
+    });
+    if (matched.length > 0) valid = matched;
+  }
 
   // Sort by liquidity (best = most liquid pair)
   valid.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
@@ -94,6 +105,37 @@ async function findCoinGeckoId(symbol) {
     // Prefer exact symbol match
     const exact = coins.find((c) => c.symbol?.toLowerCase() === symbol.toLowerCase());
     return exact ? exact.id : coins[0].id;
+  } catch {
+    return null;
+  }
+}
+
+// --- CoinGecko: current market data (accurate price, volume, mcap) ---
+async function getCoinGeckoMarketData(coinId) {
+  try {
+    const headers = CG_KEY ? { 'x-cg-demo-api-key': CG_KEY } : {};
+    const res = await axios.get(`${CG_BASE}/coins/markets`, {
+      params: {
+        vs_currency: 'usd',
+        ids: coinId,
+        price_change_percentage: '1h,24h,7d',
+      },
+      headers,
+      timeout: 8000,
+    });
+    const d = res.data?.[0];
+    if (!d) return null;
+    return {
+      priceUsd: d.current_price,
+      marketCap: d.market_cap,
+      volume24h: d.total_volume,
+      priceChange1h: d.price_change_percentage_1h_in_currency ?? null,
+      priceChange24h: d.price_change_percentage_24h ?? null,
+      priceChange7d: d.price_change_percentage_7d_in_currency ?? null,
+      symbol: d.symbol?.toUpperCase(),
+      name: d.name,
+      image: d.image,
+    };
   } catch {
     return null;
   }
@@ -271,35 +313,72 @@ function getVolumeTrend(dexData) {
 
 // --- Main export ---
 async function analyzeToken(query) {
-  // 1. DexScreener (always first — covers all DEX tokens)
-  const dexData = await getDexData(query.trim());
-  if (!dexData) {
-    return {
-      error: `Token "${query}" not found on DexScreener. Try the contract address instead.`,
-    };
-  }
+  const q = query.trim();
 
-  const { symbol, priceUsd } = dexData;
-
-  // 2. CoinGecko history for RSI + real support/resistance (best effort)
+  // 1. CoinGecko first — gets accurate price + market data
+  let cgId = null;
+  let cgMarket = null;
   let rsi = null;
   let levels = null;
-  let cgId = null;
 
   try {
-    cgId = await findCoinGeckoId(symbol);
+    cgId = await findCoinGeckoId(q);
     if (cgId) {
-      const prices = await getCoinGeckoHistory(cgId);
+      // Run market data + history in parallel
+      const [market, prices] = await Promise.all([
+        getCoinGeckoMarketData(cgId),
+        getCoinGeckoHistory(cgId),
+      ]);
+      cgMarket = market;
       if (prices.length >= 15) {
         rsi = calculateRSI(prices);
         levels = findPriceLevels(prices);
       }
     }
   } catch {
-    // Continue without CoinGecko data
+    // Continue without CoinGecko
   }
 
-  // 3. Manipulation score
+  // 2. DexScreener — pass CoinGecko price to filter to the correct chain/pair
+  const cgPrice = cgMarket?.priceUsd || null;
+  let dexData = null;
+  try {
+    dexData = await getDexData(q, cgPrice);
+  } catch {
+    // Continue without DexScreener
+  }
+
+  // Need at least one data source
+  if (!dexData && !cgMarket) {
+    return { error: `Token "${query}" not found. Try the contract address instead.` };
+  }
+
+  // 3. Merge: CoinGecko is source of truth for price/mcap/volume
+  //    DexScreener adds liquidity, pair URL, and 5m/6h price changes
+  const symbol = cgMarket?.symbol || dexData?.symbol;
+  const name = cgMarket?.name || dexData?.name;
+  const priceUsd = cgMarket?.priceUsd || dexData?.priceUsd;
+  const marketCap = cgMarket?.marketCap || dexData?.marketCap || 0;
+  const volume24h = cgMarket?.volume24h || dexData?.volume24h || 0;
+
+  // Price changes: CoinGecko for 1h/24h (accurate), DexScreener for 5m/6h
+  const priceChange = {
+    m5:  dexData?.priceChange?.m5 ?? null,
+    h1:  cgMarket?.priceChange1h ?? dexData?.priceChange?.h1 ?? null,
+    h6:  dexData?.priceChange?.h6 ?? null,
+    h24: cgMarket?.priceChange24h ?? dexData?.priceChange?.h24 ?? null,
+  };
+
+  const liquidity = dexData?.liquidity || 0;
+  const dexForScore = {
+    liquidity,
+    volume24h,
+    marketCap,
+    priceChange,
+    volume1h: dexData?.volume1h || 0,
+  };
+
+  // 4. Manipulation score
   let manipulation = null;
   try {
     manipulation = await getManipulationScore(symbol, priceUsd);
@@ -307,27 +386,25 @@ async function analyzeToken(query) {
     // Continue without
   }
 
-  // 4. Calculate zones + score
+  // 5. Calculate zones + score
   const zones = calcTradeZones(priceUsd, levels);
-  const tradability = calcTradabilityScore(dexData, manipulation?.score ?? null, rsi);
-  const volumeTrend = getVolumeTrend(dexData);
-  const volMcapRatio = dexData.marketCap > 0
-    ? (dexData.volume24h / dexData.marketCap) * 100
-    : 0;
+  const tradability = calcTradabilityScore(dexForScore, manipulation?.score ?? null, rsi);
+  const volumeTrend = getVolumeTrend(dexForScore);
+  const volMcapRatio = marketCap > 0 ? (volume24h / marketCap) * 100 : 0;
 
   return {
     symbol,
-    name: dexData.name,
-    address: dexData.address,
-    chainId: dexData.chainId,
-    dexId: dexData.dexId,
-    dexUrl: dexData.dexUrl,
+    name,
+    address: dexData?.address || null,
+    chainId: dexData?.chainId || null,
+    dexId: dexData?.dexId || null,
+    dexUrl: dexData?.dexUrl || null,
     cgId,
     priceUsd,
-    priceChange: dexData.priceChange,
-    volume24h: dexData.volume24h,
-    liquidity: dexData.liquidity,
-    marketCap: dexData.marketCap,
+    priceChange,
+    volume24h,
+    liquidity,
+    marketCap,
     rsi,
     levels,
     zones,
