@@ -56,7 +56,12 @@ export async function generatePrediction(priceData) {
       ).join('\n')
     : '\nNo past prediction history yet.';
 
-  const systemPrompt = `You are a signals.wtf-style crypto price range predictor. You suggest a realistic end-of-day price range for betting purposes.
+  // Calculate hours until next UTC midnight (daily candle close)
+  const now = new Date();
+  const nextMidnightUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const hoursUntilClose = ((nextMidnightUTC - now) / 3600000).toFixed(1);
+
+  const systemPrompt = `You are a signals.wtf-style crypto price range predictor. You predict where the price will be at the CLOSE of the current 24h UTC daily candle (00:00 UTC).
 
 Output ONLY valid JSON:
 {
@@ -68,20 +73,23 @@ Output ONLY valid JSON:
 }
 
 Rules:
+- You are predicting the daily candle CLOSE price at 00:00 UTC — not intraday highs/lows
 - Round ALL prices to nearest $${inc} increment
 - Range should be realistic — if trend is clear, go tighter. If choppy, go wider
-- mostLikelyPrice is your single best guess within the range
+- Consider how much time is left in the candle when sizing the range (less time = tighter range)
+- mostLikelyPrice is your single best guess for where price closes
 - Confidence: High = clear trend + tight range, Medium = mixed signals, Low = high uncertainty`;
 
-  const userPrompt = `Predict end-of-day price range for ${symbol} (signals.wtf style).
+  const userPrompt = `Predict the daily candle CLOSE price range for ${symbol}.
 
+Time until daily candle close (00:00 UTC): ${hoursUntilClose} hours
 Current price: $${priceData.currentPrice.toLocaleString()}
 24h change: ${priceData.priceChange24h?.toFixed(2)}%
 7d change: ${priceData.priceChange7d?.toFixed(2)}%
 24h high: $${priceData.high24h?.toLocaleString()}
 24h low: $${priceData.low24h?.toLocaleString()}
 
-Recent OHLC candles:
+Recent OHLC candles (4h each):
 ${priceData.ohlcSample.map((c) => `  ${c.time.slice(0, 16)} | O:${c.open} H:${c.high} L:${c.low} C:${c.close}`).join('\n')}
 ${memoryContext}
 
