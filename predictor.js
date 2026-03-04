@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 import { getRecentSymbolHistory } from './memory.js';
 
-const client = new Anthropic();
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Round to nearest increment (signals.wtf uses $200 for BTC)
 const INCREMENTS = { BTC: 200, ETH: 10, SOL: 5, BNB: 5, DOGE: 0.01 };
@@ -95,14 +95,16 @@ ${memoryContext}
 
 Output JSON only.`;
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await client.chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
     max_tokens: 512,
-    messages: [{ role: 'user', content: userPrompt }],
-    system: systemPrompt,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
   });
 
-  const text = response.content[0].text.trim();
+  const text = response.choices[0].message.content.trim();
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('Claude returned non-JSON: ' + text);
 
