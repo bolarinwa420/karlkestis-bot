@@ -14,7 +14,7 @@ bot.command('start', (ctx) => {
     `*signals.wtf Prediction Helper* 🎯\n\n` +
     `AI-powered price range predictions — signals.wtf style.\n\n` +
     `Commands:\n` +
-    `/predict BTC — get min/max range + win probability\n` +
+    `/predict BTC [price] — get min/max range + win probability\n` +
     `/result BTC 73500 — log actual close price\n` +
     `/history — your last 10 predictions\n` +
     `/score — your accuracy stats\n\n` +
@@ -29,15 +29,19 @@ bot.command('start', (ctx) => {
 bot.command('predict', async (ctx) => {
   const args = ctx.message.text.split(' ').slice(1);
   const symbol = args[0]?.toUpperCase();
+  const manualPrice = args[1] ? parseFloat(args[1].replace(/,/g, '')) : null;
 
   if (!symbol) {
-    return ctx.reply('Usage: /predict BTC\nSupported: BTC ETH SOL BNB DOGE');
+    return ctx.reply('Usage: /predict BTC [price]\nExample: /predict BTC 72772\nSupported: BTC ETH SOL BNB DOGE');
   }
 
   const thinking = await ctx.reply(`Fetching ${symbol} data and analyzing... ⏳`);
 
   try {
     const priceData = await getPriceData(symbol);
+    if (manualPrice && !isNaN(manualPrice)) {
+      priceData.currentPrice = manualPrice;
+    }
     const prediction = await generatePrediction(priceData);
 
     const id = await savePrediction({
