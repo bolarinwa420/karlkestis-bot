@@ -41,6 +41,9 @@ bot.command('predict', async (ctx) => {
     const priceData = await getPriceData(symbol);
     if (manualPrice && !isNaN(manualPrice)) {
       priceData.currentPrice = manualPrice;
+      console.log(`[predict] Manual price override: ${manualPrice}`);
+    } else {
+      console.log(`[predict] CoinGecko price: ${priceData.currentPrice}`);
     }
     const prediction = await generatePrediction(priceData);
 
