@@ -1,9 +1,13 @@
 import { JSONFilePreset } from 'lowdb/node';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { mkdirSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, 'data', 'predictions.json');
+const DATA_DIR = join(__dirname, 'data');
+const DB_PATH = join(DATA_DIR, 'predictions.json');
+
+mkdirSync(DATA_DIR, { recursive: true });
 
 async function getDb() {
   const db = await JSONFilePreset(DB_PATH, { predictions: [] });
