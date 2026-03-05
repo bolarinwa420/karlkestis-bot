@@ -55,22 +55,23 @@ bot.command('predict', async (ctx) => {
     const rangeWidth = prediction.max - prediction.min;
     const inc = { BTC: 200, ETH: 10, SOL: 5, BNB: 5, DOGE: 0.01 }[symbol] ?? 1;
     const buckets = Math.round(rangeWidth / inc);
+    const safe = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     const msg =
-      `*${symbol} — signals.wtf Range*\n` +
+      `<b>${symbol} — signals.wtf Range</b>\n` +
       `─────────────────────\n` +
-      `💰 Current Price: *$${priceData.currentPrice.toLocaleString()}*\n` +
-      `🎯 Most Likely: *$${prediction.mostLikelyPrice.toLocaleString()}*\n\n` +
-      `📉 Min Price: *$${prediction.min.toLocaleString()}*\n` +
-      `📈 Max Price: *$${prediction.max.toLocaleString()}*\n` +
+      `💰 Current Price: <b>$${priceData.currentPrice.toLocaleString()}</b>\n` +
+      `🎯 Most Likely: <b>$${prediction.mostLikelyPrice.toLocaleString()}</b>\n\n` +
+      `📉 Min Price: <b>$${prediction.min.toLocaleString()}</b>\n` +
+      `📈 Max Price: <b>$${prediction.max.toLocaleString()}</b>\n` +
       `📏 Range: $${rangeWidth.toLocaleString()} (${buckets} buckets × $${inc})\n\n` +
-      `${prediction.winProbability ? `🎲 Est. Win Probability: *${prediction.winProbability}%*\n` : ''}` +
+      `${prediction.winProbability ? `🎲 Est. Win Probability: <b>${prediction.winProbability}%</b>\n` : ''}` +
       `${confidenceEmoji} Confidence: ${prediction.confidence}\n\n` +
-      `💭 *Analysis:*\n${prediction.reasoning}\n\n` +
-      `_Log the close price later:_\n` +
-      `/result ${symbol} <actual_price>`;
+      `💭 <b>Analysis:</b>\n${safe(prediction.reasoning)}\n\n` +
+      `<i>Log the close price later:</i>\n` +
+      `/result ${symbol} &lt;actual_price&gt;`;
 
-    await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, msg, { parse_mode: 'Markdown' });
+    await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, msg, { parse_mode: 'HTML' });
   } catch (err) {
     await ctx.api.editMessageText(
       ctx.chat.id,
